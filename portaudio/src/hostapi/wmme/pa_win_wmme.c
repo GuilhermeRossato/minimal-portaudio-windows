@@ -101,20 +101,20 @@
 #endif /* __MWERKS__ */
 
 #include "portaudio.h"
-#include "pa_trace.h"
-#include "pa_util.h"
-#include "pa_allocation.h"
-#include "pa_hostapi.h"
-#include "pa_stream.h"
-#include "pa_cpuload.h"
-#include "pa_process.h"
-#include "pa_debugprint.h"
+#include "../../common/pa_trace.h"
+#include "../../common/pa_util.h"
+#include "../../common/pa_allocation.h"
+#include "../../common/pa_hostapi.h"
+#include "../../common/pa_stream.h"
+#include "../../common/pa_cpuload.h"
+#include "../../common/pa_process.h"
+#include "../../common/pa_debugprint.h"
 
-#include "pa_win_wmme.h"
-#include "pa_win_waveformat.h"
+#include "./pa_win_wmme.h"
+#include "./pa_win_waveformat.h"
 
 #ifdef PAWIN_USE_WDMKS_DEVICE_INFO
-#include "pa_win_wdmks_utils.h"
+#include "../../common/pa_win_wdmks_utils.h"
 #ifndef DRV_QUERYDEVICEINTERFACE
 #define DRV_QUERYDEVICEINTERFACE     (DRV_RESERVED + 12)
 #endif

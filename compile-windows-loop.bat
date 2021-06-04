@@ -17,7 +17,7 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 :start
 title Compiling and Executing
-cl /nologo /DWIN32 /D_WINDOWS /Ob0 /O2 /I./portaudio/include /showIncludes main.c ./portaudio/src/os/win/pa_win_util.c ./portaudio/src/os/win/pa_win_hostapis.c ./portaudio/src/os/win/pa_win_waveformat.c ./portaudio/src/os/win/pa_win_wdmks_utils.c ./portaudio/src/os/win/pa_win_coinitialize.c ./portaudio/src/common/pa_front.c && echo. && main.exe 1
+cl /nologo /DPA_USE_WMME /DWIN32 /D_WINDOWS /Ob0 /O2 /I./portaudio/include /I./portaudio/src/common /showIncludes main.c ./portaudio/src/common/pa_allocation.c ./portaudio/src/common/pa_dither.c ./portaudio/src/common/pa_converters.c ./portaudio/src/common/pa_cpuload.c ./portaudio/src/common/pa_stream.c ./portaudio/src/common/pa_process.c ./portaudio/src/os/win/pa_win_util.c ./portaudio/src/os/win/pa_win_hostapis.c ./portaudio/src/os/win/pa_win_waveformat.c ./portaudio/src/os/win/pa_win_wdmks_utils.c ./portaudio/src/os/win/pa_win_coinitialize.c ./portaudio/src/common/pa_front.c ./portaudio/src/hostapi/wmme/pa_win_wmme.c && echo. && main.exe 1
 title Waiting for key to recompile
 echo.
 pause
