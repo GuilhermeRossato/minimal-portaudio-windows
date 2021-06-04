@@ -2,6 +2,7 @@
 #include <math.h>
 #include "portaudio.h"
 
+#define AMPLITUDE_PERCENT (0.25)
 #define NUM_SECONDS   (5)
 #define SAMPLE_RATE   (44100)
 #define FRAMES_PER_BUFFER  (64)
@@ -40,8 +41,8 @@ static int patestCallback(
 
     for( i=0; i<framesPerBuffer; i++ )
     {
-        *out++ = data->sine[data->left_phase];  /* left */
-        *out++ = data->sine[data->right_phase];  /* right */
+        *out++ = data->sine[data->left_phase] * AMPLITUDE_PERCENT;  /* left */
+        *out++ = data->sine[data->right_phase] * AMPLITUDE_PERCENT;  /* right */
         data->left_phase += 1;
         if( data->left_phase >= TABLE_SIZE ) data->left_phase -= TABLE_SIZE;
         data->right_phase += 3; /* higher pitch so we can distinguish left and right. */
