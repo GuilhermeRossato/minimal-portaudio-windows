@@ -1,207 +1,132 @@
 #include <stdio.h>
 #include <math.h>
-
 #include "portaudio.h"
-#include <stdio.h>
-#include <math.h>
 
-#include <windows.h>
+#define NUM_SECONDS   (5)
+#define SAMPLE_RATE   (44100)
+#define FRAMES_PER_BUFFER  (64)
 
-#if PA_USE_ASIO
-#include "pa_asio.h"
+#ifndef M_PI
+#define M_PI  (3.14159265)
 #endif
 
-/*******************************************************************/
-static void PrintSupportedStandardSampleRates(
-        const PaStreamParameters *inputParameters,
-        const PaStreamParameters *outputParameters )
+#define TABLE_SIZE   (200)
+typedef struct
 {
-    static double standardSampleRates[] = {
-        8000.0, 9600.0, 11025.0, 12000.0, 16000.0, 22050.0, 24000.0, 32000.0,
-        44100.0, 48000.0, 88200.0, 96000.0, 192000.0, -1 /* negative terminated  list */
-    };
-    int     i, printCount;
-    PaError err;
+    float sine[TABLE_SIZE];
+    int left_phase;
+    int right_phase;
+}
+paTestData;
 
-    printCount = 0;
-    for( i=0; standardSampleRates[i] > 0; i++ )
+/* This routine will be called by the PortAudio engine when audio is needed.
+** It may called at interrupt level on some machines so don't do anything
+** that could mess up the system like calling malloc() or free().
+*/
+static int patestCallback(
+    const void *inputBuffer, void *outputBuffer,
+    unsigned long framesPerBuffer,
+    const PaStreamCallbackTimeInfo* timeInfo,
+    PaStreamCallbackFlags statusFlags,
+    void *userData
+) {
+    paTestData *data = (paTestData*)userData;
+    float *out = (float*)outputBuffer;
+    unsigned long i;
+
+    (void) timeInfo; /* Prevent unused variable warnings. */
+    (void) statusFlags;
+    (void) inputBuffer;
+
+    for( i=0; i<framesPerBuffer; i++ )
     {
-        err = Pa_IsFormatSupported( inputParameters, outputParameters, standardSampleRates[i] );
-        if( err == paFormatIsSupported )
-        {
-            if( printCount == 0 )
-            {
-                printf( "\t%8.2f", standardSampleRates[i] );
-                printCount = 1;
-            }
-            else if( printCount == 4 )
-            {
-                printf( ",\n\t%8.2f", standardSampleRates[i] );
-                printCount = 1;
-            }
-            else
-            {
-                printf( ", %8.2f", standardSampleRates[i] );
-                ++printCount;
-            }
-        }
+        *out++ = data->sine[data->left_phase];  /* left */
+        *out++ = data->sine[data->right_phase];  /* right */
+        data->left_phase += 1;
+        if( data->left_phase >= TABLE_SIZE ) data->left_phase -= TABLE_SIZE;
+        data->right_phase += 3; /* higher pitch so we can distinguish left and right. */
+        if( data->right_phase >= TABLE_SIZE ) data->right_phase -= TABLE_SIZE;
     }
-    if( !printCount )
-        printf( "None\n" );
-    else
-        printf( "\n" );
+
+    return paContinue;
 }
 
-/*******************************************************************/
-int main(void);
-
-int main(void)
+/*
+ * This routine is called by portaudio when playback is done.
+ */
+static void StreamFinished( void* userData )
 {
-    int     i, numDevices, defaultDisplayed;
-    const   PaDeviceInfo *deviceInfo;
-    PaStreamParameters inputParameters, outputParameters;
-    PaError err;
+    // you could do something with the data if you want
+    paTestData *data = (paTestData *) userData;
+    printf("Stream finished, data is at pointer %p\n", data);
+}
 
+int main(void) {
+    PaStreamParameters outputParameters;
+    PaStream *stream;
+    PaError err;
+    paTestData data;
+    int i;
+
+    printf("PortAudio Test: output sine wave. SR = %d, BufSize = %d\n", SAMPLE_RATE, FRAMES_PER_BUFFER);
+
+    /* initialise sinusoidal wavetable */
+    for( i=0; i<TABLE_SIZE; i++ )
+    {
+        data.sine[i] = (float) sin( ((double)i/(double)TABLE_SIZE) * M_PI * 2. );
+    }
+    data.left_phase = data.right_phase = 0;
 
     err = Pa_Initialize();
-    if( err != paNoError )
-    {
-        printf( "ERROR: Pa_Initialize returned 0x%x\n", err );
+    if( err != paNoError ) goto error;
+
+    outputParameters.device = Pa_GetDefaultOutputDevice(); /* default output device */
+    if (outputParameters.device == paNoDevice) {
+        fprintf(stderr,"Error: No default output device.\n");
         goto error;
     }
+    outputParameters.channelCount = 2;       /* stereo output */
+    outputParameters.sampleFormat = paFloat32; /* 32 bit floating point output */
+    outputParameters.suggestedLatency = Pa_GetDeviceInfo( outputParameters.device )->defaultLowOutputLatency;
+    outputParameters.hostApiSpecificStreamInfo = NULL;
 
-    printf( "PortAudio version: 0x%08X\n", Pa_GetVersion());
-    printf( "Version text: '%s'\n", Pa_GetVersionInfo()->versionText );
+    err = Pa_OpenStream(
+        &stream,
+        NULL, /* no input */
+        &outputParameters,
+        SAMPLE_RATE,
+        FRAMES_PER_BUFFER,
+        paClipOff,      /* we won't output out of range samples so don't bother clipping them */
+        patestCallback,
+        &data
+    );
 
-    numDevices = Pa_GetDeviceCount();
-    if( numDevices < 0 )
-    {
-        printf( "ERROR: Pa_GetDeviceCount returned 0x%x\n", numDevices );
-        err = numDevices;
-        goto error;
+    if( err != paNoError ) goto error;
+
+    err = Pa_SetStreamFinishedCallback( stream, &StreamFinished );
+    if( err != paNoError ) goto error;
+
+    err = Pa_StartStream( stream );
+    if( err != paNoError ) goto error;
+
+    for (int s = 0; s < NUM_SECONDS; s++) {
+        printf("Playing for %d seconds...\n", NUM_SECONDS - s );
+        Pa_Sleep( 1000 );
     }
 
-    printf( "Number of devices = %d\n", numDevices );
-    for( i=0; i<numDevices; i++ )
-    {
-        deviceInfo = Pa_GetDeviceInfo( i );
-        printf( "--------------------------------------- device #%d\n", i );
+    err = Pa_StopStream( stream );
+    if( err != paNoError ) goto error;
 
-    /* Mark global and API specific default devices */
-        defaultDisplayed = 0;
-        if( i == Pa_GetDefaultInputDevice() )
-        {
-            printf( "[ Default Input" );
-            defaultDisplayed = 1;
-        }
-        else if( i == Pa_GetHostApiInfo( deviceInfo->hostApi )->defaultInputDevice )
-        {
-            const PaHostApiInfo *hostInfo = Pa_GetHostApiInfo( deviceInfo->hostApi );
-            printf( "[ Default %s Input", hostInfo->name );
-            defaultDisplayed = 1;
-        }
-
-        if( i == Pa_GetDefaultOutputDevice() )
-        {
-            printf( (defaultDisplayed ? "," : "[") );
-            printf( " Default Output" );
-            defaultDisplayed = 1;
-        }
-        else if( i == Pa_GetHostApiInfo( deviceInfo->hostApi )->defaultOutputDevice )
-        {
-            const PaHostApiInfo *hostInfo = Pa_GetHostApiInfo( deviceInfo->hostApi );
-            printf( (defaultDisplayed ? "," : "[") );
-            printf( " Default %s Output", hostInfo->name );
-            defaultDisplayed = 1;
-        }
-
-        if( defaultDisplayed )
-            printf( " ]\n" );
-
-    /* print device info fields */
-#ifdef WIN32
-        {   /* Use wide char on windows, so we can show UTF-8 encoded device names */
-            wchar_t wideName[MAX_PATH];
-            MultiByteToWideChar(CP_UTF8, 0, deviceInfo->name, -1, wideName, MAX_PATH-1);
-            wprintf( L"Name                        = %s\n", wideName );
-        }
-#else
-        printf( "Name                        = %s\n", deviceInfo->name );
-#endif
-        printf( "Host API                    = %s\n",  Pa_GetHostApiInfo( deviceInfo->hostApi )->name );
-        printf( "Max inputs = %d", deviceInfo->maxInputChannels  );
-        printf( ", Max outputs = %d\n", deviceInfo->maxOutputChannels  );
-
-        printf( "Default low input latency   = %8.4f\n", deviceInfo->defaultLowInputLatency  );
-        printf( "Default low output latency  = %8.4f\n", deviceInfo->defaultLowOutputLatency  );
-        printf( "Default high input latency  = %8.4f\n", deviceInfo->defaultHighInputLatency  );
-        printf( "Default high output latency = %8.4f\n", deviceInfo->defaultHighOutputLatency  );
-
-#ifdef WIN32
-#if PA_USE_ASIO
-/* ASIO specific latency information */
-        if( Pa_GetHostApiInfo( deviceInfo->hostApi )->type == paASIO ){
-            long minLatency, maxLatency, preferredLatency, granularity;
-
-            err = PaAsio_GetAvailableLatencyValues( i,
-                    &minLatency, &maxLatency, &preferredLatency, &granularity );
-
-            printf( "ASIO minimum buffer size    = %ld\n", minLatency  );
-            printf( "ASIO maximum buffer size    = %ld\n", maxLatency  );
-            printf( "ASIO preferred buffer size  = %ld\n", preferredLatency  );
-
-            if( granularity == -1 )
-                printf( "ASIO buffer granularity     = power of 2\n" );
-            else
-                printf( "ASIO buffer granularity     = %ld\n", granularity  );
-        }
-#endif /* PA_USE_ASIO */
-#endif /* WIN32 */
-
-        printf( "Default sample rate         = %8.2f\n", deviceInfo->defaultSampleRate );
-
-    /* poll for standard sample rates */
-        inputParameters.device = i;
-        inputParameters.channelCount = deviceInfo->maxInputChannels;
-        inputParameters.sampleFormat = paInt16;
-        inputParameters.suggestedLatency = 0; /* ignored by Pa_IsFormatSupported() */
-        inputParameters.hostApiSpecificStreamInfo = NULL;
-
-        outputParameters.device = i;
-        outputParameters.channelCount = deviceInfo->maxOutputChannels;
-        outputParameters.sampleFormat = paInt16;
-        outputParameters.suggestedLatency = 0; /* ignored by Pa_IsFormatSupported() */
-        outputParameters.hostApiSpecificStreamInfo = NULL;
-
-        if( inputParameters.channelCount > 0 )
-        {
-            printf("Supported standard sample rates\n for half-duplex 16 bit %d channel input = \n",
-                    inputParameters.channelCount );
-            PrintSupportedStandardSampleRates( &inputParameters, NULL );
-        }
-
-        if( outputParameters.channelCount > 0 )
-        {
-            printf("Supported standard sample rates\n for half-duplex 16 bit %d channel output = \n",
-                    outputParameters.channelCount );
-            PrintSupportedStandardSampleRates( NULL, &outputParameters );
-        }
-
-        if( inputParameters.channelCount > 0 && outputParameters.channelCount > 0 )
-        {
-            printf("Supported standard sample rates\n for full-duplex 16 bit %d channel input, %d channel output = \n",
-                    inputParameters.channelCount, outputParameters.channelCount );
-            PrintSupportedStandardSampleRates( &inputParameters, &outputParameters );
-        }
-    }
+    err = Pa_CloseStream( stream );
+    if( err != paNoError ) goto error;
 
     Pa_Terminate();
+    printf("Test finished.\n");
 
-    printf("----------------------------------------------\n");
-    return 0;
-
+    return err;
 error:
     Pa_Terminate();
+    fprintf( stderr, "An error occurred while using the portaudio stream\n" );
     fprintf( stderr, "Error number: %d\n", err );
     fprintf( stderr, "Error message: %s\n", Pa_GetErrorText( err ) );
     return err;
