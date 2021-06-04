@@ -44,7 +44,7 @@ Moreover, you can use the default PortAudio documentation to manipulate audio, w
 
 # Releases
 
-There are some releases for basic versions that were not fully working if you need other executables.
+There are some releases for basic versions that were not fully working if you need other executables or source code, in case something goes wrong you might need to use old versions to debug better as they have some debugging included on them.
 
 # License
 
